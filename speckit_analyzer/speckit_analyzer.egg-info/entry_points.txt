@@ -1,0 +1,2 @@
+[console_scripts]
+speckit-analyze = speckit_analyzer.__main__:app

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# speckit-analyze command - Entry point for task analysis
+# Part of speckit-analyze extension
+
+set -euo pipefail
+
+SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
+# Get repo root
+REPO_ROOT=$(get_repo_root)
+SPECIFY_DIR="$REPO_ROOT/.specify"
+
+# Try to get feature paths (works when on a feature branch)
+if eval $(get_feature_paths 2>/dev/null); then
+    # Running from a feature branch - use auto-detected paths
+    DEFAULT_TASKS="$TASKS"
+    DEFAULT_OUTPUT="${TASKS%/*}/analysis"
+else
+    # Not on a feature branch - require explicit tasks file
+    DEFAULT_TASKS=""
+    DEFAULT_OUTPUT=""
+fi
+
+TASKS_FILE="${1:-$DEFAULT_TASKS}"
+shift || true
+
+if [[ -z "$TASKS_FILE" ]]; then
+    echo "Error: No tasks file specified and not on a feature branch." >&2
+    echo "Usage: $0 [TASKS_FILE] [OPTIONS]" >&2
+    echo "  TASKS_FILE  Path to tasks.md (required if not on feature branch)" >&2
+    exit 1
+fi
+
+# Default output directory
+OUTPUT_DIR="${TASKS_FILE%/*}/analysis"
+
+# Pass all remaining args to Python
+PYTHONPATH="${SPECIFY_DIR}/python:${PYTHONPATH:-}" python3 -m speckit_analyzer.cli analyze "$TASKS_FILE" --output "$OUTPUT_DIR" "$@"
