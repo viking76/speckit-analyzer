@@ -51,6 +51,11 @@ IMPLEMENTATION_PATTERN = re.compile(
 PARALLEL_MARKER = re.compile(r'\[P\]')
 USER_STORY_PATTERN = re.compile(r'\[US(\d+)\]')
 
+# Checkbox format: - [ ] T001 Task Name or - [x] T001 Task Name
+CHECKBOX_TASK_PATTERN = re.compile(
+    r'^[\s]*[-*]\s*\[([ xX])\]\s+(T\d+)\s+(.+?)(?:\s*\((?:P|US\d+)\))?(?:\s*//.*)?$'
+)
+
 
 def parse_tasks_file(filepath: Path | str) -> tuple[list[Task], Optional[str]]:
     """Parse a tasks.md file and return tasks and mermaid graph."""
@@ -85,7 +90,14 @@ def split_task_sections(content: str) -> list[str]:
     in_task = False
 
     for line in content.split('\n'):
+        # Detect ### T### header format
         if line.startswith('### T') and len(line) > 5 and line[5].isdigit():
+            if in_task and current_section:
+                sections.append('\n'.join(current_section))
+            current_section = [line]
+            in_task = True
+        # Detect checkbox format: - [ ] T001 or - [x] T001
+        elif CHECKBOX_TASK_PATTERN.match(line):
             if in_task and current_section:
                 sections.append('\n'.join(current_section))
             current_section = [line]
@@ -106,8 +118,32 @@ def parse_task_section(section: str) -> Optional[Task]:
         return None
 
     header = lines[0]
+    
+    # Try ### T### format first
     match = SIMPLE_TASK_PATTERN.match(header)
+    
+    # Try checkbox format: - [ ] T001 or - [x] T001
     if not match:
+        checkbox_match = CHECKBOX_TASK_PATTERN.match(header)
+        if checkbox_match:
+            status_char = checkbox_match.group(1)
+            task_id = checkbox_match.group(2)
+            title = checkbox_match.group(3).strip()
+            
+            task = Task(
+                id=task_id,
+                phase=0,
+                module="unknown",
+                priority=Priority.MEDIUM,
+                description=title,
+                status=TaskStatus.COMPLETED if status_char.lower() == 'x' else TaskStatus.PENDING,
+            )
+
+            # For checkbox format, metadata is in the header line itself
+            # Pass the full section (header + remaining lines) for parsing
+            full_content = '\n'.join(lines)
+            return parse_checkbox_task_content(task, full_content)
+
         return None
 
     task_id = match.group(1)
@@ -174,6 +210,73 @@ def parse_task_section(section: str) -> Optional[Task]:
         task.parallel = True
 
     us_match = USER_STORY_PATTERN.search(section)
+    if us_match:
+        task.user_story = f"US{us_match.group(1)}"
+
+    return task
+
+
+def parse_checkbox_task_content(task: Task, content: str) -> Task:
+    """Parse additional content for checkbox format tasks."""
+    # Parse phase: // phase: 2 or (phase: 2)
+    phase_match = re.search(r'(?:phase|Phase)[:\s]+(\d+)', content, re.IGNORECASE)
+    if phase_match:
+        task.phase = int(phase_match.group(1))
+
+    # Parse module: // module: trainer or (module: trainer)
+    module_match = re.search(r'(?:module|Module)[:\s]+([^\s,)]+)', content, re.IGNORECASE)
+    if module_match:
+        task.module = module_match.group(1).strip()
+
+    # Parse priority: // priority: high or (priority: high)
+    priority_match = re.search(r'(?:priority|Priority)[:\s]+(\w+)', content, re.IGNORECASE)
+    if priority_match:
+        try:
+            task.priority = Priority(priority_match.group(1).capitalize())
+        except ValueError:
+            pass
+
+    # Parse dependencies: // deps: T001,T002 or (deps: T001, T002)
+    deps_match = re.search(r'(?:deps|dependencies|Dependencies)[:\s]+(\[.*?\]|T\d+(?:,\s*T\d+)*)', content, re.IGNORECASE)
+    if deps_match:
+        deps_str = deps_match.group(1)
+        task.dependencies = parse_dependencies(deps_str)
+
+    # Parse estimate: // estimate: 2 days or (estimate: 2 days)
+    estimate_match = re.search(r'(?:estimate|Estimate)[:\s]+([\d.]+)\s*days?', content, re.IGNORECASE)
+    if estimate_match:
+        task.estimate_days = float(estimate_match.group(1))
+
+    # Parse description: keep original title from checkbox, or extract from content if not set
+    if not task.description or task.description.startswith('- [') or task.description.startswith('[x]') or task.description.startswith('[ ]'):
+        desc_match = re.search(r'^(?:[^/]*?)(?://|$)', content, re.MULTILINE)
+        if desc_match and desc_match.group(0).strip():
+            # Clean up the description
+            desc = desc_match.group(0).strip()
+            # Remove checkbox prefix if present
+            desc = re.sub(r'^[\s]*[-*]\s*\[[ xX]\]\s+', '', desc)
+            # Remove inline attributes after //
+            desc = re.sub(r'\s*//.*$', '', desc)
+            # Remove (P) or [P] markers
+            desc = re.sub(r'\s*\(P\)', '', desc)
+            desc = re.sub(r'\s*\[P\]', '', desc)
+            task.description = desc.strip()
+
+    # Parse acceptance criteria: - [ ] criteria
+    criteria = re.findall(r'^[\s]*[-*]\s*\[([ xX])\]\s+(.+)$', content, re.MULTILINE)
+    if criteria:
+        task.acceptance_criteria = [c[1].strip() for c in criteria]
+
+    # Implementation path
+    impl_match = re.search(r'(?:implementation|Implementation)[:\s]+(\S+)', content, re.IGNORECASE)
+    if impl_match:
+        task.implementation_path = impl_match.group(1).strip()
+
+    # Check for [P] or [US#] markers in original section
+    if re.search(r'\(P\)', content) or re.search(r'\[P\]', content):
+        task.parallel = True
+
+    us_match = USER_STORY_PATTERN.search(content)
     if us_match:
         task.user_story = f"US{us_match.group(1)}"
 
