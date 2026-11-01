@@ -23,6 +23,11 @@ SIMPLE_TASK_PATTERN = re.compile(
     r'^###\s+(T\d+)\s+(.+?)(?:\n|$)',
     re.MULTILINE
 )
+# Support both markdown header format (### T001) and checked list format (- [ ] T001)
+SIMPLE_TASK_LIST_PATTERN = re.compile(
+    r'^- \[ \]? ?(T\d+)\s+(.+?)(?:\n|$)',
+    re.MULTILINE
+)
 
 DEPENDENCIES_PATTERN = re.compile(
     r'\*\*Dependencies\*\*:\s*(\[.*?\]|None|none|TBD|tbd)',
@@ -85,7 +90,9 @@ def split_task_sections(content: str) -> list[str]:
     in_task = False
 
     for line in content.split('\n'):
-        if line.startswith('### T') and len(line) > 5 and line[5].isdigit():
+                # Reconnaître les deux formats : ### T001 et - [ ] T001
+        if (line.startswith('### T') and len(line) > 5 and line[5].isdigit()) or \
+           re.match(r'^- \[ \]? ?T\d+', line):
             if in_task and current_section:
                 sections.append('\n'.join(current_section))
             current_section = [line]
@@ -108,8 +115,10 @@ def parse_task_section(section: str) -> Optional[Task]:
     header = lines[0]
     match = SIMPLE_TASK_PATTERN.match(header)
     if not match:
-        return None
-
+    # Essayer le format liste cochée : - [ ] T001 ou - [X] T001
+        match = SIMPLE_TASK_LIST_PATTERN.match(header)
+        if not match:
+            return None
     task_id = match.group(1)
     title = match.group(2).strip()
 
