@@ -36,7 +36,7 @@ console = Console()
 def analyze(
     tasks_file: Path = typer.Argument(..., help="Path to tasks.md file"),
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory for analysis artifacts"),
-    thresholds: str = typer.Option("complexity=5,context=100000", "--threshold", "-t", help="Delegation thresholds"),
+    thresholds: str = typer.Option("complexity=3", "--threshold", "-t", help="Delegation threshold (complexity=3)"),
     calibrate: bool = typer.Option(False, "--calibrate", "-c", help="Calibrate from completed tasks"),
     enrich: bool = typer.Option(False, "--enrich", "-e", help="Enrich tasks.md with scores"),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output JSON to stdout"),
@@ -73,13 +73,11 @@ def analyze(
     score_all_tasks(tasks, graph, project_root, velocity_overrides)
     console.print(f"[green]Scored all tasks[/green]")
 
-    # Set delegable flag based on thresholds
+    # Set delegable flag based on complexity threshold only
+    complexity_threshold = threshold_dict.get("complexity", 3)
     for task in tasks:
         if task.score:
-            task.delegable = (
-                task.score.complexity <= threshold_dict.get("complexity", 5) and
-                task.score.context_tokens <= threshold_dict.get("context_tokens", 100000)
-            )
+            task.delegable = task.score.complexity <= complexity_threshold
             if task.delegable:
                 task.context_package_path = f"analysis/delegation_package/{task.id}/"
 
@@ -159,11 +157,7 @@ def build_analysis_result(
     delegation_summary = DelegationSummary(
         total_tasks=len(tasks),
         delegable=len(delegable_tasks),
-        non_delegable_complexity=sum(1 for t in non_delegable if t.score and t.score.complexity > thresholds.get("complexity", 5)),
-        non_delegable_context=sum(1 for t in non_delegable if t.score and t.score.context_tokens > thresholds.get("context_tokens", 100000)),
-        non_delegable_both=sum(1 for t in non_delegable if t.score
-                               and t.score.complexity > thresholds.get("complexity", 5)
-                               and t.score.context_tokens > thresholds.get("context_tokens", 100000)),
+        non_delegable_complexity=sum(1 for t in non_delegable if t.score and t.score.complexity > thresholds.get("complexity", 3)),
     )
 
     for task in delegable_tasks:
@@ -196,9 +190,7 @@ def print_summary(result: AnalysisResult, thresholds: dict) -> None:
 
     table.add_row("Total Tasks", str(ds.total_tasks))
     table.add_row("Delegable", f"{ds.delegable} ({ds.delegable/max(ds.total_tasks,1)*100:.1f}%)")
-    table.add_row("Non-Delegable (Complexity)", str(ds.non_delegable_complexity))
-    table.add_row("Non-Delegable (Context)", str(ds.non_delegable_context))
-    table.add_row("Non-Delegable (Both)", str(ds.non_delegable_both))
+    table.add_row("Non-Delegable (Complexity > 3)", str(ds.non_delegable_complexity))
     table.add_row("Critical Path Length", f"{cp.total_days:.1f} days")
     table.add_row("Parallelizable Days", f"{cp.parallelizable_days:.1f} days")
     table.add_row("Bottlenecks", str(len(cp.bottleneck_tasks)))
