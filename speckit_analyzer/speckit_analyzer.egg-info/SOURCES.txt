@@ -1,7 +1,0 @@
-pyproject.toml
-speckit_analyzer.egg-info/PKG-INFO
-speckit_analyzer.egg-info/SOURCES.txt
-speckit_analyzer.egg-info/dependency_links.txt
-speckit_analyzer.egg-info/entry_points.txt
-speckit_analyzer.egg-info/requires.txt
-speckit_analyzer.egg-info/top_level.txt
