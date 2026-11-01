@@ -1,0 +1,18 @@
+{
+  "extensions": {
+    "speckit-analyzer": {
+      "name": "speckit-analyzer",
+      "version": "0.1.0",
+      "description": "Task scoring, dependency analysis & delegation packaging for speckit tasks",
+      "author": "viking76",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/viking76/speckit-analyzer",
+      "repository": "https://github.com/viking76/speckit-analyzer",
+      "tags": ["analysis", "scoring", "delegation", "tasks", "automation"],
+      "spec_kit_version": ">=0.5.0",
+      "download_url": "https://github.com/viking76/speckit-analyzer/archive/refs/heads/main.zip",
+      "sha256": "",
+      "releases": {}
+    }
+  }
+}

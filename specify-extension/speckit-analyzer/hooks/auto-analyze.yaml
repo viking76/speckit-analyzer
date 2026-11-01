@@ -1,0 +1,16 @@
+# Hook: Auto-analyze after tasks generation
+# Triggered after /speckit.tasks completes
+#
+# Install: This hook is registered via extension.yml
+# Enable: specify extension enable speckit-analyzer
+# Disable: specify extension disable speckit-analyzer
+
+trigger: "after_tasks"
+command: "speckit.analyzer.analyze"
+optional: true
+priority: 10
+prompt: "Run automatic task analysis for delegation packaging?"
+description: "Auto-analyze tasks after /speckit.tasks generation"
+
+# Configuration (from .specify/extensions/speckit-analyzer/speckit-analyzer-config.yml)
+# auto_analyze: true  # Set to true to run automatically without prompt

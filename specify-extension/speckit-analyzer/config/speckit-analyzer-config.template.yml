@@ -1,0 +1,62 @@
+# speckit-analyzer Configuration Template
+# Copy this file to .specify/extensions/speckit-analyzer/speckit-analyzer-config.yml
+# and customize as needed.
+#
+# Configuration layers (highest priority last):
+# 1. Extension defaults (from extension.yml)
+# 2. Project config (this file)
+# 3. Local overrides (speckit-analyzer-config.local.yml)
+# 4. Environment variables (SPECKIT_SPECKIT_ANALYZER_*)
+
+# Delegation thresholds
+thresholds:
+  # Maximum complexity score (1-10) for delegation eligibility
+  # Lower = more conservative, fewer tasks delegated
+  complexity: 5
+
+  # Maximum context tokens for delegation eligibility
+  # Lower = more conservative, fewer tasks delegated
+  context_tokens: 100000
+
+  # Minimum estimate days to consider for delegation
+  # Tasks with estimate < this are skipped
+  min_estimate_days: 0.5
+
+# Scoring heuristics
+scoring:
+  # Velocity by module (LOC per day)
+  # Adjust based on your project's actual velocity
+  velocity_by_module:
+    trainer: 120
+    model_manager: 100
+    parser: 80
+    ui: 100
+    config: 150
+    # Add your module types here
+
+  # Pattern factors for LOC estimation
+  pattern_factors:
+    implement: 1.0
+    create: 1.0
+    refactor: 1.5
+    optimize: 1.3
+    test: 0.6
+    document: 0.3
+
+# Context packaging
+context:
+  # Maximum reference snippets to include
+  max_snippets: 5
+
+  # Maximum lines per snippet
+  max_snippet_lines: 50
+
+  # Include test patterns in context
+  include_tests: true
+
+  # Include shared config in context
+  include_config: true
+
+# Automatic analysis hooks
+auto_analyze: false  # Run analysis automatically after /speckit.tasks
+auto_enrich: false   # Enrich tasks.md with scores automatically

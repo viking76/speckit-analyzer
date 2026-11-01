@@ -14,6 +14,7 @@
   <a href="#-installation"><strong>Installation</strong></a> •
   <a href="#-usage"><strong>Usage</strong></a> •
   <a href="#-outputs"><strong>Outputs</strong></a> •
+  <a href="#-configuration"><strong>Configuration</strong></a> •
   <a href="#-docs"><strong>Documentation</strong></a>
 </p>
 
@@ -38,23 +39,23 @@
 | **📈 Threshold Analysis** | Precision/recall/F1 sweep across complexity/context thresholds |
 | **📜 Statistics History** | CSV/Parquet tracking across runs for trend analysis |
 | **🎓 Ground Truth Calibration** | Learns from `COMPLETED` tasks with actual implementations |
+| **🪝 Auto-hooks** | Runs automatically after `/speckit.tasks` |
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# 1. Install in your speckit project
-cd /your/speckit/project
-./.specify/scripts/bash/integrate-analyze.sh
+# 1. In your speckit project root
+specify extension add /path/to/speckit-analyzer/specify-extension/speckit-analyzer --dev
 
 # 2. Analyze tasks for delegation
-/speckit.analyze
+.specify/extensions/speckit-analyzer/scripts/analyze-tasks.sh specs/001-feature/tasks.md
 
 # 3. Review delegation candidates
 cat specs/001-feature/analysis/task_tree.md
 
-# 4. Delegate to small LLM
+# 4. Delegate to small LLM (4B)
 cat specs/001-feature/analysis/delegation_package/T203/context.md
 ```
 
@@ -62,72 +63,62 @@ cat specs/001-feature/analysis/delegation_package/T203/context.md
 
 ## 📦 Installation
 
-### Standalone Package
+### Via spec-kit Extension System (Recommended)
+
+```bash
+# From your speckit project root
+specify extension add /path/to/speckit-analyzer/specify-extension/speckit-analyzer --dev
+```
+
+This installs the extension into `.specify/extensions/speckit-analyzer/` with:
+
+- **Command**: `speckit.speckit-analyzer.analyze` (available in AI coding agents)
+- **Bash wrapper**: `.specify/extensions/speckit-analyzer/scripts/analyze-tasks.sh`
+- **Auto-hooks**: Runs after `/speckit.tasks` (optional, prompted)
+- **Config**: `.specify/extensions/speckit-analyzer/speckit-analyzer-config.yml`
+- **Templates**: Updated `tasks-template.md` with Score/Delegation section
+
+### Standalone (Without spec-kit)
+
 ```bash
 pip install speckit-analyzer
 ```
-
-### In speckit Project (Recommended)
-```bash
-# From your speckit repo root
-./.specify/scripts/bash/integrate-analyze.sh
-```
-
-This installs:
-- `speckit-analyze` — main CLI command
-- `analyze-tasks.sh` / `speckit-analyze` — bash wrappers
-- `integrate-analyze.sh` — one-command setup
-- Updated `tasks-template.md` with Score/Delegation section
-- `analysis-template.md` for reports
 
 ---
 
 ## 🎮 Usage
 
-### Basic Analysis
+### Basic Analysis (Bash)
+
 ```bash
 # Current feature (auto-detect on feature branch)
-/speckit.analyze
+.specify/extensions/speckit-analyzer/scripts/analyze-tasks.sh
 
 # Specific tasks file
-/speckit.analyze specs/003-ai-linux-iso/tasks.md
+.specify/extensions/speckit-analyzer/scripts/analyze-tasks.sh specs/003-ai-linux-iso/tasks.md
 ```
 
-### With Calibration
+### In AI Coding Agent
+
 ```bash
-# Calibrate from COMPLETED tasks with actual implementations
-/speckit.analyze --calibrate
+# Available as slash command after extension install
+/speckit.speckit-analyzer.analyze
+
+# With options
+/speckit.speckit-analyzer.analyze --calibrate --sweep --threshold complexity=4,context=80000
 ```
 
-### Custom Thresholds
-```bash
-# Conservative: only very simple tasks
-/speckit.analyze --threshold complexity=3,context=50000
+### Options
 
-# Aggressive: allow moderate complexity
-/speckit.analyze --threshold complexity=7,context=150000
-```
-
-### Enrich Tasks File
-```bash
-# Add score annotations directly to tasks.md
-/speckit.analyze --enrich
-```
-
-### Full Threshold Sweep
-```bash
-# Precision/recall/F1 across all threshold combinations
-/speckit.analyze --sweep
-```
-
-### JSON Output (Automation)
-```bash
-# Pipe to jq or other tools
-/speckit.analyze --json | jq '.delegation_summary.delegable'
-
-# Save full result
-/speckit.analyze --json > analysis_result.json
-```
+| Option | Description |
+|--------|-------------|
+| `--calibrate` | Calibrate from `COMPLETED` tasks with actual implementations |
+| `--threshold STR` | Delegation thresholds `complexity=X,context=Y` (default: `5,100000`) |
+| `--sweep` | Full threshold sweep (precision/recall/F1) |
+| `--enrich` | Annotate tasks.md with scores inline |
+| `--json` | Output JSON to stdout |
+| `--stats-history` | Update stats history (CSV/Parquet) |
+| `-v, --verbose` | Verbose output |
 
 ---
 
@@ -201,30 +192,15 @@ METRICS_UPDATE_INTERVAL = 1.0
 
 ---
 
-## 📚 Documentation
-
-| Doc | Description |
-|-----|-------------|
-| [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) | Complete `/speckit.analyze` CLI reference |
-| [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) | Full integration guide for speckit projects |
-| [TEMPLATE_UPDATE.md](TEMPLATE_UPDATE.md) | Template modification details |
-
----
-
 ## ⚙️ Configuration
 
-Create `.speckit-analyzer.yaml` at repo root:
+Create `.specify/extensions/speckit-analyzer/speckit-analyzer-config.yml`:
 
 ```yaml
-llm:
-  base_url: "http://192.168.1.162:8889/v1"  # Unsloth endpoint
-  model: "qwen2.5-4b-instruct"
-  timeout: 60
-
 thresholds:
   complexity: 5          # Max complexity for delegation (1-10)
   context_tokens: 100000 # Max context tokens for delegation
-  min_estimate_days: 0.5
+  min_estimate_days: 0.5 # Skip micro-tasks
 
 scoring:
   velocity_by_module:
@@ -240,6 +216,11 @@ scoring:
 context:
   max_snippets: 5
   max_snippet_lines: 50
+  include_tests: true
+  include_config: true
+
+auto_analyze: false   # Run automatically after /speckit.tasks
+auto_enrich: false    # Enrich tasks.md with scores
 ```
 
 ---
@@ -247,28 +228,43 @@ context:
 ## 🏗 Architecture
 
 ```
-speckit_analyzer/
-├── parser/           # tasks.md → Task objects + Mermaid parsing
-├── scoring/          # Heuristics + calibration from ground truth
-├── graph/            # NetworkX DAG, critical path, context propagation
-├── context/          # Context minimization + packaging
-├── enricher/         # tasks.md enrichment with scores
-├── output/           # JSON, Markdown, Mermaid, CSV, Parquet
-├── stats/            # Statistics collection + threshold sweeping
-└── cli.py            # Typer CLI entry point
+specify-extension/speckit-analyzer/
+├── extension.yml           # Manifest (schema_version 1.0)
+├── commands/analyze.md     # Command documentation
+├── scripts/
+│   ├── analyze-tasks.sh    # Bash wrapper
+│   ├── analyze.py          # Python CLI entry (cli:app)
+│   ├── initialize.py       # session_start event
+│   └── validate.py         # pre_tool_use event
+├── hooks/
+│   ├── auto-analyze.yaml   # after_tasks hook
+│   └── auto-enrich.yaml    # after_tasks hook
+├── templates/
+│   ├── tasks-template.md   # Enhanced with Score/Delegation
+│   └── analysis-template.md
+├── config/
+│   └── speckit-analyzer-config.template.yml
+└── speckit_analyzer/       # Python package
+    ├── parser/             # tasks.md parsing + Mermaid
+    ├── scoring/            # Heuristics + calibration
+    ├── graph/              # NetworkX DAG, critical path
+    ├── context/            # Minimization + packaging
+    ├── enricher/           # tasks.md enrichment
+    ├── output/             # JSON, MD, Mermaid, CSV, Parquet
+    └── stats/              # Statistics + threshold sweeping
 ```
 
 ---
 
 ## 🧪 Calibration from Ground Truth
 
-Improve estimation accuracy:
+Improve estimation accuracy using completed tasks:
 
 ```bash
 # Requires tasks with:
 # - status: COMPLETED
 # - Implementation: path/to/actual/code.py
-/speckit.analyze --calibrate
+/speckit.speckit-analyzer.analyze --calibrate
 ```
 
 Learns from actual implementations:
@@ -283,7 +279,7 @@ Learns from actual implementations:
 
 ```bash
 # Full sweep
-/speckit.analyze --sweep
+/speckit.speckit-analyzer.analyze --sweep
 
 # Check results
 cat analysis/threshold_analysis.md

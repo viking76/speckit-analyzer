@@ -1,0 +1,33 @@
+schema_version: "1.0"
+
+extension:
+  id: speckit-analyzer
+  name: "Speckit Task Analyzer"
+  version: "0.1.0"
+  description: "Task scoring, dependency analysis & delegation packaging for speckit tasks"
+  author: "viking76"
+  repository: "https://github.com/viking76/speckit-analyzer"
+  license: "Apache-2.0"
+
+requires:
+  speckit_version: ">=0.5.0"
+
+provides:
+  commands:
+    - name: speckit.speckit-analyzer.analyze
+      file: commands/analyze.md
+      description: "Analyze tasks.md for complexity scoring, dependency analysis, critical path, and delegation packaging"
+
+hooks:
+  after_tasks:
+    command: speckit.speckit-analyzer.analyze
+    optional: true
+    priority: 10
+    description: "Auto-analyze tasks after /speckit.tasks generation"
+
+tags:
+  - analysis
+  - scoring
+  - delegation
+  - tasks
+  - automation

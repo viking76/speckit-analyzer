@@ -1,0 +1,16 @@
+# Hook: Auto-enrich tasks.md with scores
+# Triggered after /speckit.tasks completes
+#
+# Install: This hook is registered via extension.yml
+# Enable: specify extension enable speckit-analyzer
+# Disable: specify extension disable speckit-analyzer
+
+trigger: "after_tasks"
+command: "speckit.analyzer.analyze"
+optional: true
+priority: 15
+prompt: "Enrich tasks.md with complexity scores?"
+description: "Auto-enrich tasks.md with score annotations"
+
+# Configuration
+# auto_enrich: true  # Set to true to run automatically without prompt

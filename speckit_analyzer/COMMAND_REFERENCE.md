@@ -1,23 +1,23 @@
-# /speckit.analyze Command Reference
+# /speckit.speckit-analyzer.analyze Command Reference
 
 Analyze speckit `tasks.md` for complexity scoring, dependency analysis, critical path, and delegation packaging.
 
 ## Synopsis
 
 ```
-/speckit.analyze [TASKS_FILE] [OPTIONS]
+/speckit.speckit-analyzer.analyze [TASKS_FILE] [OPTIONS]
 ```
 
 ## Description
 
-The `/speckit.analyze` command performs comprehensive analysis of a speckit tasks.md file:
+The `/speckit.speckit-analyzer.analyze` command performs comprehensive analysis of a speckit tasks.md file:
 
 1. **Parses** tasks and dependencies (from `Dependencies:` fields and Mermaid graph)
 2. **Scores** each task: complexity (1-10), estimated LOC, context tokens required
 3. **Builds** dependency DAG and computes critical path
 4. **Identifies** delegable tasks (complexity ≤ threshold, context ≤ threshold)
-4. **Generates** minimal context packages for delegation to small LLMs
-5. **Outputs** analysis artifacts and optional threshold sweep statistics
+5. **Generates** minimal context packages for delegation to small LLMs
+6. **Outputs** analysis artifacts and optional threshold sweep statistics
 
 ## Arguments
 
@@ -52,150 +52,110 @@ The `/speckit.analyze` command performs comprehensive analysis of a speckit task
 ### Basic Analysis
 
 ```bash
-# Analyze current feature's tasks
-/speckit.analyze
+# Current feature (auto-detect on feature branch)
+/speckit.speckit-analyzer.analyze
 
-# Analyze specific tasks file
-/speckit.analyze specs/003-ai-linux-iso/tasks.md
+# Specific tasks file
+/speckit.speckit-analyzer.analyze specs/003-ai-linux-iso/tasks.md
 ```
 
 ### With Calibration
 
 ```bash
 # Calibrate from completed tasks (improves estimation accuracy)
-/speckit.analyze --calibrate
+/speckit.speckit-analyzer.analyze --calibrate
 ```
 
 ### Custom Thresholds
 
 ```bash
-# More conservative: only very simple tasks delegable
-/speckit.analyze --threshold complexity=3,context=50000
+# Conservative: only very simple tasks delegable
+/speckit.speckit-analyzer.analyze --threshold complexity=3,context=50000
 
-# More aggressive: allow moderate complexity
-/speckit.analyze --threshold complexity=7,context=150000
+# Aggressive: allow moderate complexity
+/speckit.speckit-analyzer.analyze --threshold complexity=7,context=150000
 ```
 
 ### Enrich Tasks File
 
 ```bash
 # Add score annotations directly to tasks.md
-/speckit.analyze --enrich
+/speckit.speckit-analyzer.analyze --enrich
 ```
-
-This adds after each task's header:
-```markdown
-**Score**: complexity=4, est_loc=180, context_tokens=42000, delegable=true
-**ContextPackage**: analysis/delegation_package/T203/
-```
-
-And appends a delegation summary table at the end of the file.
 
 ### Full Threshold Sweep
 
 ```bash
-# Analyze precision/recall/F1 across all threshold combinations
-/speckit.analyze --sweep
+# Precision/recall/F1 across all threshold combinations
+/speckit.speckit-analyzer.analyze --sweep
 ```
 
-Generates `threshold_analysis.md` with tables like:
-
-| Complexity | Delegable | Precision | Recall | F1 |
-|------------|-----------|-----------|--------|-----|
-| 3 | 8 | 0.75 | 0.40 | 0.52 |
-| 4 | 15 | 0.73 | 0.65 | 0.69 |
-| **5** | **23** | **0.70** | **0.85** | **0.77** |
-| 6 | 31 | 0.61 | 0.95 | 0.74 |
-
-### Statistics History
-
-```bash
-# Append to stats_history.csv/parquet for cross-run analysis
-/speckit.analyze --stats-history
-```
-
-### JSON Output (for automation)
+### JSON Output (Automation)
 
 ```bash
 # Pipe to jq or other tools
-/speckit.analyze --json | jq '.delegation_summary.delegable'
+/speckit.speckit-analyzer.analyze --json | jq '.delegation_summary.delegable'
 
 # Save full result
-/speckit.analyze --json > analysis_result.json
+/speckit.speckit-analyzer.analyze --json > analysis_result.json
 ```
 
-### Verbose Mode
+## Outputs
 
-```bash
-/speckit.analyze -v
-```
-
-Shows detailed scoring breakdown for each task.
-
-## Output Files
-
-All outputs go to `OUTPUT_DIR` (default: `specs/###-feature/analysis/`):
+All artifacts in `specs/###-feature/analysis/`:
 
 | File | Description |
 |------|-------------|
 | `analysis.json` | Complete machine-readable result |
-| `task_tree.md` | Visual tree with scores and critical path |
+| `task_tree.md` | Visual tree with scores + critical path |
 | `task_list.csv` | Spreadsheet-ready task list |
-| `critical_path.md` | Critical path analysis + parallelization |
+| `critical_path.md` | Critical path + parallelization |
 | `dependency_graph.mmd` | Mermaid graph (color-coded by score) |
 | `dependency_graph_phases.mmd` | Mermaid grouped by phase |
 | `threshold_analysis.md` | Threshold sweep report |
 | `threshold_analysis.csv` | Threshold data for plotting |
-| `stats_history.csv` | Historical stats (appended each run) |
+| `stats_history.csv` | Historical stats across runs |
 | `stats_history.parquet` | Efficient Parquet for Pandas |
-| `delegation_package/T###/context.md` | Minimal context for small LLM |
+| `delegation_package/T###/context.md` | Minimal context for delegation |
 
-## Delegation Package Structure
+## Delegation Package Example
 
-For each delegable task (`delegable=true`):
+Each delegable task gets a `delegation_package/T###/` containing:
 
-```
-delegation_package/T203/
-├── context.md          # Task + criteria + interfaces + snippets + config + tests
-├── interfaces.json     # Required upstream signatures
-├── metadata.json       # Scores, deps, thresholds, etc.
-├── refs/
-│   ├── ref_1_trainer.py
-│   └── ref_2_config.py
-└── tests.md            # Expected test patterns
-```
+- `context.md` — Task + criteria + interfaces + snippets + config + tests
+- `interfaces.json` — Required upstream signatures
+- `metadata.json` — Scores, deps, thresholds
+- `refs/` — 3-5 relevant code snippets from codebase
+- `tests.md` — Expected test patterns
 
 Total context typically **5k-50k tokens** — optimized for 4B models with 128k-256k context.
 
-## Integration with speckit Workflow
+## Configuration
 
-```bash
-# Standard workflow
-/speckit.specify "Add feature"
-/speckit.plan
-/speckit.tasks
+Create `.speckit-analyzer.yaml` at repo root:
 
-# NEW: Analyze for delegation
-/speckit.analyze
+```yaml
+thresholds:
+  complexity: 5
+  context_tokens: 100000
+  min_estimate_days: 0.5
 
-# Review delegation candidates
-cat specs/001-feature/analysis/task_tree.md
+scoring:
+  velocity_by_module:
+    trainer: 120
+    parser: 80
+    ui: 100
+  pattern_factors:
+    implement: 1.0
+    refactor: 1.5
+    test: 0.6
 
-# Delegate T203 to small LLM
-cat specs/001-feature/analysis/delegation_package/T203/context.md
+context:
+  max_snippets: 5
+  max_snippet_lines: 50
 ```
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 1 | File not found or parse error |
-| 2 | Invalid arguments |
-| 3 | Python package import error |
 
 ## See Also
 
-- [speckit-analyzer README](../README.md)
-- [Integration Guide](INTEGRATION_GUIDE.md)
-- [Threshold Analysis](THRESHOLD_ANALYSIS.md)
+- [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)
+- [TEMPLATE_UPDATE.md](TEMPLATE_UPDATE.md)

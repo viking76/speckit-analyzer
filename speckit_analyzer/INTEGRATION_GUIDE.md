@@ -5,91 +5,64 @@ Complete guide to integrating the speckit-analyzer extension into your speckit-b
 ## Prerequisites
 
 - Existing speckit project with `.specify/` directory structure
+- spec-kit v0.5.0+
 - Python 3.10+ with pip
 - Git repository (recommended)
 
 ## Installation
 
-### Option 1: Automated Integration (Recommended)
+### Local Development Installation
 
 ```bash
-cd /path/to/your/speckit/project
-./.specify/scripts/bash/integrate-analyze.sh
+# From your speckit project root
+specify extension add /path/to/speckit-analyzer/specify-extension/speckit-analyzer --dev
 ```
 
-This script:
-1. Verifies the analyzer package exists
-2. Creates `/speckit.analyze` command wrapper
-3. Updates `tasks-template.md` with Score/Delegation section
-4. Creates `analysis-template.md`
-5. Installs Python package in development mode
+This installs the extension into `.specify/extensions/speckit-analyzer/` with:
+- Command: `speckit.speckit-analyzer.analyze`
+- Bash wrapper: `.specify/extensions/speckit-analyzer/scripts/analyze-tasks.sh`
+- Auto-hooks: `after_tasks` (auto-analyze, auto-enrich)
+- Config: `.specify/extensions/speckit-analyzer/speckit-analyzer-config.yml`
 
-### Option 2: Manual Integration
-
-If you prefer manual control:
+### From GitHub (After Publishing)
 
 ```bash
-# 1. Ensure analyzer package is available
-cd .specify/python/speckit_analyzer
-pip install -e . --break-system-packages
+specify extension add speckit-analyzer --from https://github.com/viking76/speckit-analyzer
+```
 
-# 2. Make analyze-tasks.sh executable
-chmod +x .specify/scripts/bash/analyze-tasks.sh
+### From Catalog (When Published)
 
-# 3. Create command wrapper
-cat > .specify/scripts/bash/speckit-analyze << 'EOF'
-#!/usr/bin/env bash
-SCRIPT_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/common.sh"
-eval $(get_feature_paths)
-TASKS_FILE="${1:-$IMPL_TASKS}"
-shift || true
-OUTPUT_DIR="${IMPL_TASKS%/*}/analysis"
-PYTHONPATH="${SPECIFY_DIR}/python:$PYTHONPATH" python3 -m speckit_analyzer.cli analyze "$TASKS_FILE" --output "$OUTPUT_DIR" "$@"
-EOF
-chmod +x .specify/scripts/bash/speckit-analyze
-
-# 4. Update tasks-template.md (add Score/Delegation section)
-# See TEMPLATE_UPDATE.md for the exact content to append
+```bash
+specify extension add speckit-analyzer
 ```
 
 ## Configuration
 
-### Project-Level Config (`.speckit-analyzer.yaml`)
+### Project Config (`.specify/extensions/speckit-analyzer/speckit-analyzer-config.yml`)
 
-Create at repository root:
+Copy the template and customize:
+
+```bash
+cp .specify/extensions/speckit-analyzer/speckit-analyzer-config.template.yml \
+   .specify/extensions/speckit-analyzer/speckit-analyzer-config.yml
+```
 
 ```yaml
-# .speckit-analyzer.yaml
-llm:
-  base_url: "http://192.168.1.162:8889/v1"  # Unsloth endpoint
-  model: "qwen2.5-4b-instruct"
-  timeout: 60
-  max_retries: 3
-
 thresholds:
   complexity: 5          # Max complexity for delegation (1-10)
   context_tokens: 100000 # Max context tokens for delegation
   min_estimate_days: 0.5 # Skip micro-tasks
 
 scoring:
-  # Override default velocities (LOC/day per module)
   velocity_by_module:
     trainer: 120
-    model_manager: 100
     parser: 80
     ui: 100
     config: 150
-    # Add your module types
-
-  # Pattern factors for LOC estimation
   pattern_factors:
     implement: 1.0
-    create: 1.0
     refactor: 1.5
-    optimize: 1.3
     test: 0.6
-    document: 0.3
 
 context:
   max_snippets: 5
@@ -97,17 +70,20 @@ context:
   include_tests: true
   include_config: true
 
-retry_tracking:
-  enabled: true
-  compaction_threshold: 0.15
-  persist_path: "analysis/retry_stats.json"
+auto_analyze: false   # Run automatically after /speckit.tasks
+auto_enrich: false    # Enrich tasks.md with scores
 ```
 
-### Per-Run Override
+### Global Config (`.speckit-analyzer.yaml` at repo root)
 
-```bash
-/speckit.analyze --threshold complexity=4,context=80000
+```yaml
+llm:
+  base_url: "http://192.168.1.162:8889/v1"
+  model: "qwen2.5-4b-instruct"
+  timeout: 60
 ```
+
+---
 
 ## Workflow Integration
 
@@ -123,8 +99,8 @@ retry_tracking:
 # 3. Generate tasks (unchanged)
 /speckit.tasks
 
-# 4. NEW: Analyze for delegation
-/speckit.analyze
+# 4. NEW: Analyze for delegation (auto-prompted via hook)
+/speckit.tasks  # → prompts: "Run automatic task analysis?"
 
 # 5. Review results
 cat specs/001-feature/analysis/task_tree.md
@@ -132,8 +108,6 @@ cat specs/001-feature/analysis/delegation_package/T###/context.md
 ```
 
 ### CI/CD Integration
-
-Add to your CI pipeline:
 
 ```yaml
 # .github/workflows/analyze.yml
@@ -150,14 +124,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install analyzer
+      - name: Install extension
         run: |
-          cd .specify/python/speckit_analyzer
+          cd .specify/extensions/speckit-analyzer
           pip install -e . -q
       - name: Analyze tasks
         run: |
           for f in specs/*/tasks.md; do
-            PYTHONPATH=.specify/python:$PYTHONPATH python3 -m speckit_analyzer.cli analyze "$f" --output "${f%/*}/analysis" --json
+            .specify/extensions/speckit-analyzer/scripts/analyze-tasks.sh "$f" --json
           done
       - name: Upload analysis artifacts
         uses: actions/upload-artifact@v4
@@ -168,30 +142,31 @@ jobs:
 
 ### Auto-Analyze Hook
 
-Create `.specify/hooks/post-tasks-generation/analyze.sh`:
+The extension registers an `after_tasks` hook that prompts after `/speckit.tasks`:
 
-```bash
-#!/usr/bin/env bash
-# Auto-analyze after /speckit.tasks completes
-
-set -euo pipefail
-
-SPECIFY_DIR="$(CDPATH="" cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-source "$SPECIFY_DIR/.specify/scripts/bash/common.sh"
-
-eval $(get_feature_paths)
-
-if [[ -f "$IMPL_TASKS" ]]; then
-    echo "[speckit-analyze] Auto-analyzing $IMPL_TASKS..."
-    PYTHONPATH="$SPECIFY_DIR/.specify/python:$PYTHONPATH" \
-    python3 -m speckit_analyzer.cli analyze "$IMPL_TASKS" --output "${IMPL_TASKS%/*}/analysis" --enrich
-fi
+```
+⚡ Run automatic task analysis for delegation packaging? [y/N]:
 ```
 
-Make executable:
-```bash
-chmod +x .specify/hooks/post-tasks-generation/analyze.sh
+To auto-run without prompt, set in config:
+```yaml
+auto_analyze: true
 ```
+
+### Auto-Enrich Hook
+
+```yaml
+auto_enrich: true
+```
+
+Enriches tasks.md with score annotations:
+```markdown
+### T203 Real-time Metrics Collection
+**Score**: complexity=4, est_loc=180, context_tokens=42000, delegable=true
+**ContextPackage**: analysis/delegation_package/T203/
+```
+
+---
 
 ## Understanding Outputs
 
@@ -220,12 +195,14 @@ Each `delegation_package/T###/` contains:
 ```
 context.md         # Complete minimal context (copy-paste to small LLM)
 interfaces.json    # Required upstream function/class signatures
-metadata.json      # All scores, thresholds, dependencies
+metadata.json      # All scores, deps, thresholds
 refs/              # 3-5 relevant code snippets from codebase
 tests.md           # Expected test patterns
 ```
 
 **Token budget**: Typically 5,000-50,000 tokens (well within 128k-256k limits).
+
+---
 
 ## Calibration from Ground Truth
 
@@ -235,7 +212,7 @@ Improve estimation accuracy by calibrating from completed tasks:
 # Requires tasks with:
 # - status: COMPLETED
 # - Implementation: path/to/actual/code.py
-/speckit.analyze --calibrate
+/speckit.speckit-analyzer.analyze --calibrate
 ```
 
 This:
@@ -247,13 +224,15 @@ This:
 
 **Minimum**: 5+ completed tasks with implementations for meaningful calibration.
 
+---
+
 ## Threshold Tuning
 
 ### Finding Optimal Thresholds
 
 ```bash
 # Full sweep with current data
-/speckit.analyze --sweep
+/speckit.speckit-analyzer.analyze --sweep
 
 # Check results
 cat analysis/threshold_analysis.md
@@ -276,7 +255,6 @@ Key metrics:
 
 Track in `stats_history.csv`:
 ```bash
-# After multiple runs
 python3 -c "
 import pandas as pd
 df = pd.read_parquet('analysis/stats_history.parquet')
@@ -284,13 +262,15 @@ print(df[['timestamp','delegable','threshold_complexity','threshold_context']].t
 "
 ```
 
+---
+
 ## Troubleshooting
 
 ### "Module not found: speckit_analyzer"
 
 ```bash
-cd .specify/python/speckit_analyzer
-pip install -e . --break-system-packages
+cd .specify/extensions/speckit-analyzer
+pip install -e .
 ```
 
 ### "No tasks parsed"
@@ -301,49 +281,44 @@ Check tasks.md format — must have `### T### Task Title` headers with `**Phase*
 
 Verify thresholds aren't too strict:
 ```bash
-/speckit.analyze --threshold complexity=7,context=200000
+/speckit.speckit-analyzer.analyze --threshold complexity=7,context=200000
 ```
 
 ### "Python package import error in CI"
 
-Ensure PYTHONPATH includes the analyzer:
+Ensure PYTHONPATH includes the extension:
 ```yaml
 env:
-  PYTHONPATH: ".specify/python:${PYTHONPATH}"
+  PYTHONPATH: ".specify/extensions/speckit-analyzer:${PYTHONPATH}"
 ```
 
 ### Large context packages (> 100k tokens)
 
 Reduce snippet count/lines:
 ```yaml
-# .speckit-analyzer.yaml
 context:
   max_snippets: 3
   max_snippet_lines: 30
 ```
 
+---
+
 ## Advanced Usage
 
 ### Custom Velocity by Module
 
-If your project has unique module types:
-
 ```python
-# In a custom script
 from speckit_analyzer.scoring import HeuristicScorer
 
 scorer = HeuristicScorer(velocity_overrides={
-    "my_custom_module": 200,  # Very fast module
-    "legacy_integration": 40,  # Slow, complex module
+    "my_custom_module": 200,
+    "legacy_integration": 40,
 })
 ```
 
 ### Extending Scoring Heuristics
 
-Add domain-specific complexity keywords:
-
 ```python
-# In a custom script
 from speckit_analyzer.scoring.heuristics import HeuristicScorer
 
 scorer = HeuristicScorer()
@@ -359,34 +334,26 @@ scorer.COMPLEXITY_KEYWORDS.update({
 
 ```bash
 # Find all delegable tasks in Phase 2
-/speckit.analyze --json | jq '.tasks[] | select(.delegable and .phase==2) | .id'
+/speckit.speckit-analyzer.analyze --json | jq '.tasks[] | select(.delegable and .phase==2) | .id'
 
 # Export delegation packages list
-/speckit.analyze --json | jq '.tasks[] | select(.delegable) | {id, package: .context_package_path}'
+/speckit.speckit-analyzer.analyze --json | jq '.tasks[] | select(.delegable) | {id, package: .context_package_path}'
 ```
+
+---
 
 ## Migration from Manual Analysis
 
-If you previously analyzed tasks manually:
-
-1. Run `/speckit.analyze --enrich` to add scores to existing tasks.md
+1. Run `/speckit.speckit-analyzer.analyze --enrich` to add scores to existing tasks.md
 2. Compare with your manual estimates
 3. Adjust thresholds if needed
 4. Use `--calibrate` to align heuristics with your project's reality
+
+---
 
 ## Support
 
 - Check `analysis/` outputs for debugging info
 - Enable `-v` verbose flag for detailed scoring breakdown
 - Review `stats_history.csv` for trend anomalies
-- Open issues on the speckit repository
-
-## Version Compatibility
-
-| speckit-analyzer | speckit | Python |
-|------------------|---------|--------|
-| 0.1.x | Any with `.specify/` | 3.10+ |
-
----
-
-*Part of the speckit ecosystem — Apache-2.0 licensed*
+- Open issues on the [speckit-analyzer repository](https://github.com/viking76/speckit-analyzer)
